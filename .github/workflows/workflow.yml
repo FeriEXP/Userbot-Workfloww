@@ -62,7 +62,7 @@ jobs:
 
       - name: clone userbot repo
         run: |
-          git clone --depth=1 https://github.com/mrismanaziz/Man-Userbot
+          git clone --depth=1 https://github.com/Ahli-kubur/Man-Userbot
         shell: bash
 
       - name: pip cache
