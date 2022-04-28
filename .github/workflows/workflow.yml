@@ -1,0 +1,103 @@
+name: Feri bot
+
+on:
+  push: null
+  workflow_dispatch: null
+
+jobs:
+  lmao:
+    runs-on: ubuntu-latest
+    steps:
+      - name: cancel previous runs
+        uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          all_but_latest: true
+          access_token: ${{ secrets.TOKEN }}
+
+      - name: delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 0
+
+      - name: haxx apt for cache stonks
+        id: apt-haxx
+        run: |
+          echo "::set-output name=date::$(TZ="${{ secrets.TZ }}" /bin/date -u "+%Y%m%d")"
+          sudo tee -a /etc/apt/apt.conf.d/99custom <<EOT
+          # https://unix.stackexchange.com/a/160206
+          Dir::Cache "$HOME/.apt-fast/cache";
+          Dir::Cache::Archives "$HOME/.apt-fast/cache/archives";
+          EOT
+          mkdir -pv "$HOME/.apt-fast/cache"
+          mkdir -pv "$HOME/.apt-fast/cache/archives"
+          sudo rm -rfv /var/cache/apt/apt-fast
+        shell: bash
+
+      - name: apt cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.apt-fast/cache
+          key: ${{ runner.os }}-apt-${{ steps.apt-haxx.outputs.date }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
+      - name: apt-fast packages
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt update
+          sudo apt-fast install --no-install-recommends -y bash curl git libjpeg9 libwebp6 ffmpeg neofetch
+          sudo chmod -R 777 ~/.apt-fast/cache
+        shell: bash
+
+      - name: git credentials
+        run: |
+          git config --global user.name ${{ secrets.USERNAME }}
+          git config --global user.email ${{ secrets.EMAIL }}
+          git config --global credential.helper store
+          echo "https://${{ secrets.USERNAME }}:${{ secrets.TOKEN }}@github.com" > ~/.git-credentials
+        shell: bash
+
+      - name: clone userbot repo
+        run: |
+          git clone --depth=1 https://github.com/mrismanaziz/Man-Userbot
+        shell: bash
+
+      - name: pip cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('Man-Userbot/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: userbot configuration
+        run: |
+          git clone "https://${{ secrets.USERNAME }}:${{ secrets.TOKEN }}@github.com/${{ secrets.USERNAME }}/${{ secrets.CONFIG_REPO }}" config
+          cp -v config/config.ini Man-Userbot/config.ini
+        shell: bash
+
+      - name: pip packages
+        run: |
+          pip install -r Man-Userbot/requirements.txt
+        shell: bash
+
+      - name: run userbot
+        timeout-minutes: 350
+        continue-on-error: true
+        run: |
+          cd Man-Userbot && python3 -m userbot
+        shell: bash
+
+      - name: loop
+        run: |
+          cd ..
+          git clone --depth=1 "https://github.com/${{ secrets.USERNAME }}/userbot-workflow" loop
+          cd loop
+          sed -i "11s/Last Workflow Run-.*-informational.svg/Last Workflow Run-$(TZ='${{ secrets.TZ }}' date)-informational.svg/" README.md
+          git add README.md
+          git commit --amend -m "$(curl -s http://whatthecommit.com/index.txt)"
+          git push -f "https://${{ secrets.TOKEN }}@github.com/${{ secrets.USERNAME }}/userbot-workflow" HEAD:main
+        shell: bash
